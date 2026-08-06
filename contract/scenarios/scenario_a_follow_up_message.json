@@ -1,0 +1,78 @@
+{
+  "name": "scenario_a_follow_up_message",
+  "description": "New intent -> confirmation request -> user follow-up message mid-confirmation modifies the pending action -> modified confirmation -> completion.",
+  "user_id": "00000000-0000-4000-8000-000000000001",
+  "trace": [
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_start", "session_id": "00000000-0000-4000-8000-0000000000a1",
+      "user_id": "00000000-0000-4000-8000-000000000001", "resume": false
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "user_utterance", "session_id": "00000000-0000-4000-8000-0000000000a1",
+      "text": "clear my morning, I'm sick", "router_class": "new_intent",
+      "entity_refs": {}, "ts": "2026-08-06T08:58:00Z"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "ack", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "text": "Checking your calendar now."
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "text": "Found three meetings this morning.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "status": "planning", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "confirmation_request", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "priority": "high",
+      "speak": "I can move the 9, 10, and 11 o'clock to Thursday. Shall I go ahead?",
+      "options": ["approve", "reject", "modify"], "risk_class": "write"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "status": "waiting", "waiting_reason": "user_confirm"
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "interrupt", "session_id": "00000000-0000-4000-8000-0000000000a1",
+      "target_task_id": "00000000-0000-4000-8000-0000000000a2",
+      "text": "wait, keep the 10am"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "confirmation_request", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "priority": "high",
+      "speak": "Got it - I'll move the 9 and 11, and keep the 10am. Shall I go ahead?",
+      "options": ["approve", "reject", "modify"], "risk_class": "write"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "status": "waiting", "waiting_reason": "user_confirm"
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "confirmation_response", "session_id": "00000000-0000-4000-8000-0000000000a1",
+      "task_id": "00000000-0000-4000-8000-0000000000a2", "decision": "approve"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "calendar.reschedule", "risk_class": "write" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "text": "Moved the 9 o'clock and the 11 o'clock to Thursday.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "status": "completed", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "done", "task_id": "00000000-0000-4000-8000-0000000000a2",
+      "outcome": "completed",
+      "summary_speak": "Done - two meetings moved to Thursday, the 10am stays."
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_end", "session_id": "00000000-0000-4000-8000-0000000000a1"
+    }}
+  ]
+}

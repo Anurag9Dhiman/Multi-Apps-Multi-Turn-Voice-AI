@@ -1,0 +1,75 @@
+{
+  "name": "scenario_b_multi_day_plan_resume",
+  "description": "New intent opens a multi-step task that gets externally blocked -> user hangs up -> a session the next day resumes with a status summary -> task continues to done.",
+  "user_id": "00000000-0000-4000-8000-000000000001",
+  "trace": [
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_start", "session_id": "00000000-0000-4000-8000-0000000000b1",
+      "user_id": "00000000-0000-4000-8000-000000000001", "resume": false
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "user_utterance", "session_id": "00000000-0000-4000-8000-0000000000b1",
+      "text": "help me prep for the board meeting Friday", "router_class": "new_intent",
+      "entity_refs": {}, "ts": "2026-08-05T17:10:00Z"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "ack", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "text": "On it - pulling together what you'll need for Friday."
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "status": "planning", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "text": "Found last quarter's board deck and your prep notes.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "docs.search", "risk_class": "read" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "speak", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "text": "I've asked Priya to share edit access to the deck - I'll keep going once she does.",
+      "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "status": "blocked", "waiting_reason": "external"
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_end", "session_id": "00000000-0000-4000-8000-0000000000b1"
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_start", "session_id": "00000000-0000-4000-8000-0000000000b2",
+      "user_id": "00000000-0000-4000-8000-000000000001", "resume": true
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_query", "session_id": "00000000-0000-4000-8000-0000000000b2",
+      "query": "where were we"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "speak", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "text": "Yesterday I started your board prep and was waiting on Priya to share deck access - that came through overnight, so I finished the metrics slide.",
+      "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "docs.draft_slide", "risk_class": "read" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "status": "completed", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "done", "task_id": "00000000-0000-4000-8000-0000000000b3",
+      "outcome": "completed",
+      "summary_speak": "Board prep is done - the updated metrics slide is in the deck, ready for Friday."
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_end", "session_id": "00000000-0000-4000-8000-0000000000b2"
+    }}
+  ]
+}
