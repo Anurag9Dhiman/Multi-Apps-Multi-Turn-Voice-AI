@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voice-platform.internal/contract/v1/agent_to_voice.schema.json",
+  "title": "CollectiveOS -> voice layer events (v1)",
+  "oneOf": [
+    { "$ref": "#/$defs/ack" },
+    { "$ref": "#/$defs/progress" },
+    { "$ref": "#/$defs/confirmation_request" },
+    { "$ref": "#/$defs/clarification_request" },
+    { "$ref": "#/$defs/task_update" },
+    { "$ref": "#/$defs/speak" },
+    { "$ref": "#/$defs/done" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "priority": { "type": "string", "enum": ["low", "high"] },
+    "risk_class": { "type": "string", "enum": ["read", "write"] },
+    "task_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "planning",
+        "running",
+        "waiting",
+        "blocked",
+        "cancelled",
+        "completed",
+        "failed"
+      ]
+    },
+    "waiting_reason": {
+      "oneOf": [
+        { "type": "string", "enum": ["user_confirm", "user_clarify", "external"] },
+        { "type": "null" }
+      ]
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "text"],
+      "properties": {
+        "type": { "const": "ack" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "text", "priority"],
+      "properties": {
+        "type": { "const": "progress" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "text": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" }
+      }
+    },
+    "confirmation_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "priority", "speak", "options", "risk_class"],
+      "properties": {
+        "type": { "const": "confirmation_request" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "priority": { "const": "high" },
+        "speak": { "type": "string", "minLength": 1 },
+        "options": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["approve", "reject", "modify"] },
+          "minItems": 1
+        },
+        "risk_class": { "$ref": "#/$defs/risk_class" }
+      }
+    },
+    "clarification_request": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "priority", "speak"],
+      "properties": {
+        "type": { "const": "clarification_request" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "priority": { "const": "high" },
+        "speak": { "type": "string", "minLength": 1 }
+      }
+    },
+    "task_update": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "status", "waiting_reason"],
+      "properties": {
+        "type": { "const": "task_update" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "status": { "$ref": "#/$defs/task_status" },
+        "waiting_reason": { "$ref": "#/$defs/waiting_reason" },
+        "step": {
+          "type": "object",
+          "properties": {
+            "tool": { "type": "string" },
+            "risk_class": { "$ref": "#/$defs/risk_class" }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "enum": ["waiting", "blocked"] } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": { "waiting_reason": { "not": { "type": "null" } } }
+          },
+          "else": {
+            "properties": { "waiting_reason": { "type": "null" } }
+          }
+        }
+      ]
+    },
+    "speak": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "text", "priority"],
+      "properties": {
+        "type": { "const": "speak" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "text": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" }
+      }
+    },
+    "done": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "outcome", "summary_speak"],
+      "properties": {
+        "type": { "const": "done" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "outcome": { "type": "string", "enum": ["completed", "partial", "failed"] },
+        "summary_speak": { "type": "string", "minLength": 1 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "task_id", "recoverable", "speak"],
+      "properties": {
+        "type": { "const": "error" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "recoverable": { "type": "boolean" },
+        "speak": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

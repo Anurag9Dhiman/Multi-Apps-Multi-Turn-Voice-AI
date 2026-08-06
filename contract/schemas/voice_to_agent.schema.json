@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://voice-platform.internal/contract/v1/voice_to_agent.schema.json",
+  "title": "Voice layer -> CollectiveOS events (v1)",
+  "oneOf": [
+    { "$ref": "#/$defs/session_start" },
+    { "$ref": "#/$defs/user_utterance" },
+    { "$ref": "#/$defs/interrupt" },
+    { "$ref": "#/$defs/confirmation_response" },
+    { "$ref": "#/$defs/session_query" },
+    { "$ref": "#/$defs/session_end" }
+  ],
+  "$defs": {
+    "router_class": {
+      "type": "string",
+      "enum": [
+        "small_talk",
+        "simple_lookup",
+        "new_intent",
+        "modify_inflight",
+        "confirmation_reply",
+        "session_query"
+      ]
+    },
+    "session_start": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id", "user_id", "resume"],
+      "properties": {
+        "type": { "const": "session_start" },
+        "session_id": { "type": "string", "format": "uuid" },
+        "user_id": { "type": "string", "format": "uuid" },
+        "resume": { "type": "boolean" }
+      }
+    },
+    "user_utterance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id", "text", "router_class", "entity_refs", "ts"],
+      "properties": {
+        "type": { "const": "user_utterance" },
+        "session_id": { "type": "string", "format": "uuid" },
+        "text": { "type": "string", "minLength": 1 },
+        "router_class": { "$ref": "#/$defs/router_class" },
+        "entity_refs": { "type": "object" },
+        "ts": { "type": "string", "format": "date-time" }
+      }
+    },
+    "interrupt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id", "target_task_id", "text"],
+      "properties": {
+        "type": { "const": "interrupt" },
+        "session_id": { "type": "string", "format": "uuid" },
+        "target_task_id": {
+          "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+        },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "confirmation_response": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id", "task_id", "decision"],
+      "properties": {
+        "type": { "const": "confirmation_response" },
+        "session_id": { "type": "string", "format": "uuid" },
+        "task_id": { "type": "string", "format": "uuid" },
+        "decision": { "type": "string", "enum": ["approve", "reject", "modify"] },
+        "modification": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "decision": { "const": "modify" } } },
+          "then": { "required": ["modification"] }
+        }
+      ]
+    },
+    "session_query": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id", "query"],
+      "properties": {
+        "type": { "const": "session_query" },
+        "session_id": { "type": "string", "format": "uuid" },
+        "query": { "type": "string", "minLength": 1 }
+      }
+    },
+    "session_end": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type", "session_id"],
+      "properties": {
+        "type": { "const": "session_end" },
+        "session_id": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

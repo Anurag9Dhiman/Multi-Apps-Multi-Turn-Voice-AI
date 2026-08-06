@@ -1,0 +1,96 @@
+{
+  "name": "scenario_c_batch_partial_failure",
+  "description": "New intent opens a batch action across multiple items -> confirmation -> approved -> mid-flight interrupt removes one item -> remaining items execute, one fails -> done with outcome partial.",
+  "user_id": "00000000-0000-4000-8000-000000000001",
+  "trace": [
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_start", "session_id": "00000000-0000-4000-8000-0000000000c1",
+      "user_id": "00000000-0000-4000-8000-000000000001", "resume": false
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "user_utterance", "session_id": "00000000-0000-4000-8000-0000000000c1",
+      "text": "cancel the subscriptions I'm not using", "router_class": "new_intent",
+      "entity_refs": {}, "ts": "2026-08-06T14:02:00Z"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "ack", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "Let me check what you're subscribed to."
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "planning", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "Found four subscriptions you haven't used in over two months: Spotify, Acme Gym, ClipCloud, and NewsDaily.",
+      "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "confirmation_request", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "priority": "high", "speak": "Want me to cancel all four?",
+      "options": ["approve", "reject", "modify"], "risk_class": "write"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "waiting", "waiting_reason": "user_confirm"
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "confirmation_response", "session_id": "00000000-0000-4000-8000-0000000000c1",
+      "task_id": "00000000-0000-4000-8000-0000000000c2", "decision": "approve"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "billing.cancel", "risk_class": "write" }
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "interrupt", "session_id": "00000000-0000-4000-8000-0000000000c1",
+      "target_task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "wait, keep Spotify"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "speak", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "Got it, keeping Spotify - cancelling the other three.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "billing.cancel", "risk_class": "write" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "Acme Gym cancelled.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "billing.cancel", "risk_class": "write" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "ClipCloud's cancellation page is down - couldn't complete that one.",
+      "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "running", "waiting_reason": null,
+      "step": { "tool": "billing.cancel", "risk_class": "write" }
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "progress", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "text": "NewsDaily cancelled.", "priority": "low"
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "task_update", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "status": "completed", "waiting_reason": null
+    }},
+    { "direction": "agent_to_voice", "event": {
+      "type": "done", "task_id": "00000000-0000-4000-8000-0000000000c2",
+      "outcome": "partial",
+      "summary_speak": "Done - cancelled Acme Gym and NewsDaily, kept Spotify like you asked. ClipCloud's site was down, so that one's still active - I'll retry later."
+    }},
+    { "direction": "voice_to_agent", "event": {
+      "type": "session_end", "session_id": "00000000-0000-4000-8000-0000000000c1"
+    }}
+  ]
+}
