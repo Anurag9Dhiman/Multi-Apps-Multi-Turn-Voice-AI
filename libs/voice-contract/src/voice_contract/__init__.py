@@ -1,8 +1,14 @@
 """Pydantic models for the voice <-> CollectiveOS event contract (v1).
 
-Mirrors ../../../../contract/schemas/*.schema.json. Keep the two in sync by
-hand — there's no codegen step for the MVP, and the JSON Schemas remain the
+Mirrors /contract/schemas/*.schema.json at the repo root, which remains the
 source of truth other languages (a future TypeScript client) would target.
+Keep the two in sync by hand -- there's no codegen step for the MVP.
+
+Shared by both sides of the contract: mock-agent-backend (plays
+CollectiveOS) parses VoiceToAgentEvent and dumps AgentToVoiceEvent;
+voice-service (plays the voice layer) dumps VoiceToAgentEvent and parses
+AgentToVoiceEvent. One set of models means the two can't drift apart
+silently the way hand-duplicated copies would.
 """
 
 from __future__ import annotations
@@ -102,6 +108,18 @@ def parse_voice_to_agent(raw: dict) -> VoiceToAgentEvent:
     return _voice_to_agent_adapter.validate_python(raw)
 
 
+def dump_voice_event(event: VoiceToAgentEvent) -> dict:
+    """Serialize for the wire. target_task_id (Interrupt) is required *and*
+    nullable, same situation as waiting_reason below -- keep it even when
+    None. Everything else optional (e.g. ConfirmationResponse.modification)
+    is omitted when unset.
+    """
+    data = event.model_dump(exclude_none=True)
+    if isinstance(event, Interrupt):
+        data["target_task_id"] = event.target_task_id
+    return data
+
+
 # ---- CollectiveOS -> voice layer -------------------------------------------------
 
 
@@ -181,6 +199,13 @@ AgentToVoiceEvent = Annotated[
     ],
     Field(discriminator="type"),
 ]
+
+
+_agent_to_voice_adapter: TypeAdapter[AgentToVoiceEvent] = TypeAdapter(AgentToVoiceEvent)
+
+
+def parse_agent_to_voice(raw: dict) -> AgentToVoiceEvent:
+    return _agent_to_voice_adapter.validate_python(raw)
 
 
 def dump_agent_event(event: AgentToVoiceEvent) -> dict:

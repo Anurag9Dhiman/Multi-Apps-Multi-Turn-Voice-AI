@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from . import contract as c
+import voice_contract as c
 from . import scenarios as sc
 from .session import STORE, TaskRecord
 
