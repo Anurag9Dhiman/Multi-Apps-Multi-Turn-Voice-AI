@@ -1,6 +1,6 @@
 """Every event in every reference scenario fixture must validate against
 the frozen JSON Schemas in contract/schemas/ -- this is what keeps the
-fixtures, the schemas, and the pydantic models in contract.py from drifting
+fixtures, the schemas, and the voice_contract pydantic models from drifting
 apart silently.
 """
 

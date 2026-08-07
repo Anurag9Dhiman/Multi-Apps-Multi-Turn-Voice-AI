@@ -16,7 +16,7 @@ import asyncio
 import os
 from collections.abc import Awaitable, Callable
 
-from . import contract as c
+import voice_contract as c
 
 # Overridable so a manually-run demo server can feel real (e.g. 0.6) while
 # the test suite stays fast.

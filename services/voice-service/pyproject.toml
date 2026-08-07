@@ -1,18 +1,18 @@
 [project]
-name = "mock-agent-backend"
+name = "voice-service"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.141.1",
-    "jsonschema>=4.26.0",
-    "pydantic>=2",
-    "uvicorn[standard]>=0.52.1",
+    "anthropic>=0.40",
+    "livekit-agents[cartesia,deepgram,silero]>=1.6.8",
+    "pydantic-settings>=2",
     "voice-contract",
+    "websockets>=17.0.1",
 ]
 
 [project.scripts]
-mock-agent-backend = "mock_agent_backend:main"
+voice-service = "voice_service:main"
 
 [build-system]
 requires = ["uv_build>=0.11.18,<0.12.0"]
@@ -20,10 +20,10 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "mock-agent-backend",
     "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.uv.sources]
 voice-contract = { path = "../../libs/voice-contract", editable = true }
+mock-agent-backend = { path = "../mock-agent-backend", editable = true }
