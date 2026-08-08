@@ -1,11 +1,11 @@
 # voice-service
 
-Weeks 3-8 of the MVP plan: LiveKit room, streaming STT (Deepgram) / TTS
+Weeks 3-10 of the MVP plan: LiveKit room, streaming STT (Deepgram) / TTS
 (Cartesia) with per-hop latency, a Haiku router with an instant-ack fast
 path, a turn manager, and a CollectiveOS bridge over the frozen event
 contract (shared as the [`voice-contract`](../../libs/voice-contract)
-package) — now with multi-task session tracking, an entity stack, and
-session persistence/resume on top.
+package) — with multi-task session tracking, an entity stack, session
+persistence/resume, and reconnection resilience on top.
 
 ## How a turn flows
 
@@ -15,11 +15,15 @@ session persistence/resume on top.
    Haiku router (`router.py`) for one of the six categories.
 3. `small_talk`/`simple_lookup` → answered locally by `ack.py`, never
    crosses the wire.
-4. Everything else → forwarded to CollectiveOS (`collectiveos_client.py`,
-   points at `mock-agent-backend` by default) as `user_utterance` /
-   `interrupt` / `confirmation_response` / `session_query`. `new_intent`
-   utterances get pronouns resolved against `entity_stack.py` first
-   (attached as `entity_refs`).
+4. Everything else → forwarded to CollectiveOS over
+   `ReconnectingCollectiveOSClient` (`resilient_client.py`, wraps the raw
+   `collectiveos_client.py`; points at `mock-agent-backend` by default) as
+   `user_utterance` / `interrupt` / `confirmation_response` /
+   `session_query`. `new_intent` utterances get pronouns resolved against
+   `entity_stack.py` first (attached as `entity_refs`). An unexpected drop
+   is retried with exponential backoff and resumes the same session
+   automatically — `handle_utterance`'s send side and `_receive_loop`'s
+   receive side don't need to know a reconnect happened.
 5. Whatever CollectiveOS sends back is spoken via `speech_composer.py`
    (priority preemption, one-breath logging) → `agent.py`'s `speak`
    binding, which tracks utterances a barge-in cut off as undelivered
@@ -38,6 +42,11 @@ mock-agent-backend over an actual socket**:
   → **new session, resumed** → status summary → done
 - Scenario C's shape (batch + mid-flight interrupt + partial failure) also
   covered in `test_e2e_scenario_a.py`
+- `tests/test_e2e_reconnect.py` — the underlying socket is force-closed
+  mid-task (bypassing our own `close()`, so it's indistinguishable from a
+  real network drop), and the **same** `ConversationController` — not a
+  freshly constructed one — reconnects with backoff, resumes, and finishes
+  the task
 
 Haiku is bypassed in all three via an explicit `router_class` argument
 (no live Anthropic key in this environment) — everything else, including
@@ -46,15 +55,16 @@ sharing one `SessionStore`, runs unmocked.
 
 ## What's here vs. what needs live credentials or infrastructure to prove out
 
-Unit- and integration-tested (46 tests, all green): router tool-call
+Unit- and integration-tested (53 tests, all green): router tool-call
 parsing, ack templates, the full multi-task `ConversationController` state
 machine (including which task an unqualified follow-up targets when more
 than one is active), the entity stack's pronoun resolution and its
 deliberate refusal to treat sentence-initial capitalized words as entities,
 session snapshot/restore, the speech composer's priority and one-breath
 logic, the router eval harness's scoring/reporting (not the model's actual
-judgment — see below), and all three reference scenarios end to end over a
-real socket.
+judgment — see below), the reconnect wrapper's backoff/give-up logic against
+a fake transport, and all three reference scenarios *plus* an unexpected
+mid-task connection drop, end to end over a real socket.
 
 **Not verifiable in this environment:**
 - The router's actual classification *judgment* in practice — its
@@ -66,9 +76,9 @@ real socket.
   assumes under a real barge-in — LiveKit's interruption semantics, not
   ours; worth checking first once live testing is possible
 - Real-world audio, latency numbers, and audio edge cases (noise, silence,
-  crosstalk, dropped connections mid-call) — `CollectiveOSClient` degrades
-  a dropped connection to a clean `StopAsyncIteration` rather than
-  crashing, but there's no reconnect-with-backoff yet
+  crosstalk) — genuinely need hardware this environment doesn't have.
+  Dropped-connection recovery specifically *is* now covered (see above) —
+  that gap is closed, not just narrowed.
 
 **Out of reach from this repo entirely** (see
 [`/collectiveos-integration`](../../collectiveos-integration) at the repo

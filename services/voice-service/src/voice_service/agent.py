@@ -30,11 +30,11 @@ from livekit.agents.llm import ChatContext
 from livekit.plugins import cartesia, deepgram, silero
 
 from .ack import AckGenerator
-from .collectiveos_client import CollectiveOSClient
 from .config import Settings
 from .conversation import ConversationController
 from .entity_stack import EntityStack
 from .latency import LatencyAggregator
+from .resilient_client import ReconnectingCollectiveOSClient
 from .router import HaikuRouter
 from .session_store import InMemorySessionStore, RedisSessionStore
 from .speech_composer import SpeechComposer
@@ -115,7 +115,7 @@ async def entrypoint(ctx: JobContext) -> None:
         session_store = InMemorySessionStore()
 
     controller = ConversationController(
-        client=CollectiveOSClient(settings.collectiveos_ws_url),
+        client=ReconnectingCollectiveOSClient(settings.collectiveos_ws_url),
         speak=composer.speak,
         router=HaikuRouter(client=anthropic_messages),
         ack=AckGenerator(client=anthropic_messages),
