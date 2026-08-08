@@ -28,14 +28,16 @@ from livekit.agents import (
 )
 from livekit.agents.llm import ChatContext
 from livekit.plugins import cartesia, deepgram, silero
-from voice_contract import Priority
 
 from .ack import AckGenerator
 from .collectiveos_client import CollectiveOSClient
 from .config import Settings
 from .conversation import ConversationController
+from .entity_stack import EntityStack
 from .latency import LatencyAggregator
 from .router import HaikuRouter
+from .session_store import InMemorySessionStore, RedisSessionStore
+from .speech_composer import SpeechComposer
 from .turn_manager import TurnManagerSettings, UndeliveredTracker
 
 logger = logging.getLogger("voice_service.agent")
@@ -76,18 +78,20 @@ def _record_metric(aggregator: LatencyAggregator, metric: object) -> None:
         aggregator.record("tts.ttfb", metric.ttfb)
 
 
-def _make_speak(session: AgentSession, tracker: UndeliveredTracker):
-    async def speak(text: str, priority: Priority) -> None:
-        if priority == "high":
-            await session.interrupt()
-        elif session.user_state == "speaking":
-            # Contract rule: low-priority events are droppable if the user
-            # is mid-utterance.
-            return
+def _make_speech_composer(session: AgentSession, tracker: UndeliveredTracker) -> SpeechComposer:
+    async def raw_speak(text: str) -> object:
         handle = session.say(text)
         tracker.track(handle, text)
+        return handle
 
-    return speak
+    async def raw_interrupt() -> None:
+        await session.interrupt()
+
+    return SpeechComposer(
+        raw_speak=raw_speak,
+        raw_interrupt=raw_interrupt,
+        is_user_speaking=lambda: session.user_state == "speaking",
+    )
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -103,11 +107,20 @@ async def entrypoint(ctx: JobContext) -> None:
     )
 
     anthropic_messages = AsyncAnthropic(api_key=settings.anthropic_api_key).messages
+    composer = _make_speech_composer(session, tracker)
+
+    if settings.redis_url:
+        session_store = RedisSessionStore.from_url(settings.redis_url)
+    else:
+        session_store = InMemorySessionStore()
+
     controller = ConversationController(
         client=CollectiveOSClient(settings.collectiveos_ws_url),
-        speak=_make_speak(session, tracker),
+        speak=composer.speak,
         router=HaikuRouter(client=anthropic_messages),
         ack=AckGenerator(client=anthropic_messages),
+        entities=EntityStack(),
+        session_store=session_store,
     )
 
     @session.on("metrics_collected")
@@ -117,6 +130,10 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info(aggregator.summary_line())
 
     await ctx.connect()
+    # resume=False: real resume-detection needs a signal from the call setup
+    # (room metadata / participant attributes carrying "this user has a
+    # pending task") that doesn't exist yet -- that's an integration-time
+    # decision for whatever places the call, not something inferable here.
     await controller.start(session_id=ctx.room.name, user_id=ctx.job.id, resume=False)
 
     async def _stop_controller() -> None:
