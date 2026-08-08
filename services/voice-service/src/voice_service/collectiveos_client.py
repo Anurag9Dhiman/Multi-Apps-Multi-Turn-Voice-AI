@@ -8,6 +8,7 @@ contract in weeks 1-2.
 from __future__ import annotations
 
 import json
+from typing import AsyncIterator, Protocol
 
 import websockets
 from voice_contract import (
@@ -18,6 +19,22 @@ from voice_contract import (
     dump_voice_event,
     parse_agent_to_voice,
 )
+
+
+class CollectiveOSTransport(Protocol):
+    """What ConversationController actually needs from a transport --
+    satisfied by both CollectiveOSClient (single connection, used directly
+    in tests that don't care about drops) and ReconnectingCollectiveOSClient
+    (resilient_client.py, the production default). Naming the interface
+    explicitly means conversation.py doesn't have to import the resilience
+    wrapper just to type-hint against it, and doesn't accidentally couple
+    to CollectiveOSClient-specific internals.
+    """
+
+    async def connect(self, *, session_id: str, user_id: str, resume: bool = ...) -> None: ...
+    async def send(self, event: VoiceToAgentEvent) -> None: ...
+    async def close(self) -> None: ...
+    def __aiter__(self) -> AsyncIterator[AgentToVoiceEvent]: ...
 
 
 class CollectiveOSClient:

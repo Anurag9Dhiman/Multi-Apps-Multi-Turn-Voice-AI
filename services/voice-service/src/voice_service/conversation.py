@@ -48,7 +48,7 @@ from voice_contract import (
 )
 
 from .ack import AckGenerator
-from .collectiveos_client import CollectiveOSClient
+from .collectiveos_client import CollectiveOSTransport
 from .entity_stack import EntityStack
 from .router import HaikuRouter
 from .session_store import InMemorySessionStore, SessionSnapshot, SessionStore
@@ -81,7 +81,7 @@ class ConversationController:
     def __init__(
         self,
         *,
-        client: CollectiveOSClient,
+        client: CollectiveOSTransport,
         speak: Speak,
         router: HaikuRouter | None = None,
         ack: AckGenerator | None = None,
