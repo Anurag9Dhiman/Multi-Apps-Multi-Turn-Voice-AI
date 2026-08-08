@@ -28,3 +28,9 @@ class Settings(BaseSettings):
     collectiveos_ws_url: str = Field(
         default="ws://localhost:8000/v1/ws", validation_alias="COLLECTIVEOS_WS_URL"
     )
+
+    # None -> session state (active tasks, entity stack) lives in-process
+    # only, lost on restart. Set to use Redis (plan sec. 6); RedisSessionStore
+    # is structurally complete but unverified -- no Redis instance exists in
+    # this environment.
+    redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")

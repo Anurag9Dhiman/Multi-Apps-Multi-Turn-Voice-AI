@@ -1,8 +1,18 @@
 import asyncio
 
 import pytest
-from voice_contract import Ack, ConfirmationRequest, Done, Interrupt, SessionQuery, UserUtterance
+from voice_contract import (
+    Ack,
+    ConfirmationRequest,
+    Done,
+    Interrupt,
+    Progress,
+    SessionQuery,
+    TaskUpdate,
+    UserUtterance,
+)
 from voice_service.conversation import ConversationController
+from voice_service.session_store import InMemorySessionStore
 
 
 class FakeClient:
@@ -211,5 +221,98 @@ def test_done_clears_active_task_and_speaks_summary_at_high_priority():
         assert controller.current_task_id is None
         assert ("All done.", "high") in speak_calls
         await controller.stop()
+
+    asyncio.run(scenario())
+
+
+def test_multiple_active_tasks_are_all_tracked():
+    async def scenario():
+        client = FakeClient()
+        controller, _ = _controller(client)
+        await controller.start(session_id="s1", user_id="u1")
+
+        client.push(Ack(task_id="t1", text="Working on the first thing."))
+        await _settle()
+        client.push(Ack(task_id="t2", text="Working on the second thing."))
+        await _settle()
+
+        assert controller.active_task_ids == ["t1", "t2"]
+        await controller.stop()
+
+    asyncio.run(scenario())
+
+
+def test_current_task_prefers_the_one_waiting_on_the_user():
+    """With two tasks in flight, an unqualified follow-up should target
+    whichever one is actually waiting on the user, not just whichever was
+    touched most recently."""
+
+    async def scenario():
+        client = FakeClient()
+        controller, _ = _controller(client)
+        await controller.start(session_id="s1", user_id="u1")
+
+        client.push(Ack(task_id="t1", text="Starting task one."))
+        await _settle()
+        client.push(
+            ConfirmationRequest(
+                task_id="t1", speak="Shall I go ahead?", options=["approve", "reject", "modify"], risk_class="write"
+            )
+        )
+        await _settle()
+        # t2 becomes the most recently *touched* task, but it isn't the one
+        # waiting on the user -- t1 is.
+        client.push(Progress(task_id="t2", text="Still working on task two."))
+        await _settle()
+
+        assert controller.current_task_id == "t1"
+        assert controller.waiting_reason == "user_confirm"
+        await controller.stop()
+
+    asyncio.run(scenario())
+
+
+def test_new_intent_attaches_resolved_pronouns_as_entity_refs():
+    async def scenario():
+        client = FakeClient()
+        controller, _ = _controller(client, "new_intent")
+        await controller.start(session_id="s1", user_id="u1")
+
+        client.push(Progress(task_id="t1", text="Found the 10am and the 3pm on your calendar."))
+        await _settle()
+
+        await controller.handle_utterance("actually, keep it")
+
+        sent = client.sent[-1]
+        assert isinstance(sent, UserUtterance)
+        assert sent.entity_refs  # resolved against the most recent mention (3pm)
+
+    asyncio.run(scenario())
+
+
+def test_session_snapshot_persists_and_restores_on_resume():
+    async def scenario():
+        store = InMemorySessionStore()
+        client = FakeClient()
+        controller, _ = _controller(client)
+        controller._session_store = store  # same store a real resumed session would share
+        await controller.start(session_id="s1", user_id="u1")
+
+        client.push(Ack(task_id="t1", text="Working on it."))
+        await _settle()
+        await controller.stop()
+
+        snapshot = await store.load("u1")
+        assert snapshot is not None
+        assert snapshot.active_task_ids == ["t1"]
+        assert snapshot.ended_at is not None
+
+        client2 = FakeClient()
+        controller2, _ = _controller(client2)
+        controller2._session_store = store
+        await controller2.start(session_id="s2", user_id="u1", resume=True)
+
+        assert controller2.active_task_ids == ["t1"]
+        await controller2.stop()
 
     asyncio.run(scenario())

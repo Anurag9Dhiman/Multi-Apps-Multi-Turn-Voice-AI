@@ -1,14 +1,23 @@
 """Framework-agnostic conversation orchestration: router decision in,
-contract events out, CollectiveOS events back out as speech. No LiveKit
-import here on purpose -- this is the piece weeks 5-6 actually adds, and
-it's testable against a real mock-agent-backend over a real socket without
-any audio hardware. agent.py is the thin LiveKit-specific binding on top.
+contract events out, CollectiveOS events back out as speech (via a
+SpeechComposer). No LiveKit import here on purpose -- this and
+speech_composer.py are what weeks 5-8 actually add, and both are testable
+against a real mock-agent-backend over a real socket without any audio
+hardware. agent.py is the thin LiveKit-specific binding on top.
 
 Send and receive are decoupled deliberately: `handle_utterance` only
 decides what to *send* based on the router's classification; a separate
 receive loop speaks whatever CollectiveOS sends back, whenever it arrives.
 That mirrors how the real duplex connection behaves -- an ack can arrive
 while the user is still mid-sentence on their next utterance.
+
+Multi-task + entity stack + resume (weeks 7-8): active tasks are tracked in
+arrival order, not as a single slot, so more than one task can be in flight
+at once (plan: "multi-task sessions"). `current_task_id` picks whichever
+task is actually waiting on the user, falling back to the most recent --
+that's the one an unqualified "wait, keep the 10am" should target. Session
+state (active task ids + the entity stack) is snapshotted to a SessionStore
+keyed by user_id, so a resumed connection can restore both.
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
@@ -39,11 +49,13 @@ from voice_contract import (
 
 from .ack import AckGenerator
 from .collectiveos_client import CollectiveOSClient
+from .entity_stack import EntityStack
 from .router import HaikuRouter
+from .session_store import InMemorySessionStore, SessionSnapshot, SessionStore
 
 logger = logging.getLogger("voice_service.conversation")
 
-Speak = Callable[[str, Priority], Awaitable[None]]
+Speak = Callable[[str, Priority], Awaitable[object]]
 
 _APPROVE_WORDS = re.compile(r"\b(yes|yeah|yep|approve|go ahead|do it|sure|correct|confirm)\b", re.I)
 # Deliberately narrow to unambiguous negations. Words like "cancel"/"stop"/
@@ -73,26 +85,61 @@ class ConversationController:
         speak: Speak,
         router: HaikuRouter | None = None,
         ack: AckGenerator | None = None,
+        entities: EntityStack | None = None,
+        session_store: SessionStore | None = None,
     ) -> None:
         self._client = client
         self._speak = speak
         self._router = router or HaikuRouter()
         self._ack = ack or AckGenerator()
+        self._entities = entities or EntityStack()
+        self._session_store = session_store or InMemorySessionStore()
 
         self._session_id: str | None = None
         self._user_id: str | None = None
         self._receive_task: asyncio.Task[None] | None = None
+        self._started_at: float | None = None
 
-        self.current_task_id: str | None = None
-        self.waiting_reason: str | None = None
+        # Active tasks in arrival/touch order; last = most recently active.
+        self._task_order: list[str] = []
+        self._task_waiting_reason: dict[str, str | None] = {}
+
+    @property
+    def active_task_ids(self) -> list[str]:
+        return list(self._task_order)
+
+    @property
+    def current_task_id(self) -> str | None:
+        """Whichever task is actually waiting on the user, else the most
+        recently active one -- the natural target for an unqualified
+        follow-up like "wait, keep the 10am"."""
+        for task_id in reversed(self._task_order):
+            if self._task_waiting_reason.get(task_id):
+                return task_id
+        return self._task_order[-1] if self._task_order else None
+
+    @property
+    def waiting_reason(self) -> str | None:
+        task_id = self.current_task_id
+        return self._task_waiting_reason.get(task_id) if task_id else None
 
     async def start(self, *, session_id: str, user_id: str, resume: bool = False) -> None:
         self._session_id = session_id
         self._user_id = user_id
+        self._started_at = time.time()
+
+        if resume:
+            snapshot = await self._session_store.load(user_id)
+            if snapshot is not None:
+                self._entities.restore(snapshot.entity_stack)
+                for task_id in snapshot.active_task_ids:
+                    self._touch_task(task_id)
+
         await self._client.connect(session_id=session_id, user_id=user_id, resume=resume)
         self._receive_task = asyncio.create_task(self._receive_loop())
 
     async def stop(self) -> None:
+        await self._persist_session(ended=True)
         if self._receive_task is not None:
             self._receive_task.cancel()
             try:
@@ -115,12 +162,13 @@ class ConversationController:
             return
 
         if router_class == "new_intent":
+            entity_refs = self._entities.resolve(text)
             await self._client.send(
                 UserUtterance(
                     session_id=self._session_id,
                     text=text,
                     router_class="new_intent",
-                    entity_refs={},
+                    entity_refs=entity_refs,
                     ts=datetime.now(UTC).isoformat(),
                 )
             )
@@ -156,36 +204,65 @@ class ConversationController:
 
         logger.warning("unhandled router_class %r for utterance %r", router_class, text)
 
+    def _touch_task(self, task_id: str) -> None:
+        if task_id in self._task_order:
+            self._task_order.remove(task_id)
+        self._task_order.append(task_id)
+        self._task_waiting_reason.setdefault(task_id, None)
+
+    def _drop_task(self, task_id: str) -> None:
+        if task_id in self._task_order:
+            self._task_order.remove(task_id)
+        self._task_waiting_reason.pop(task_id, None)
+
+    async def _persist_session(self, *, ended: bool = False) -> None:
+        if self._user_id is None:
+            return
+        await self._session_store.save(
+            SessionSnapshot(
+                user_id=self._user_id,
+                active_task_ids=self.active_task_ids,
+                entity_stack=self._entities.snapshot(),
+                started_at=self._started_at or time.time(),
+                ended_at=time.time() if ended else None,
+            )
+        )
+
     async def _receive_loop(self) -> None:
         async for event in self._client:
             await self._handle_agent_event(event)
 
     async def _handle_agent_event(self, event: AgentToVoiceEvent) -> None:
         if isinstance(event, Ack):
-            self.current_task_id = event.task_id
+            self._touch_task(event.task_id)
+            self._entities.observe_agent_speech(event.text)
             await self._speak(event.text, "low")
         elif isinstance(event, (Progress, SpeakEvent)):
-            self.current_task_id = event.task_id
+            self._touch_task(event.task_id)
+            self._entities.observe_agent_speech(event.text)
             await self._speak(event.text, event.priority)
         elif isinstance(event, ConfirmationRequest):
-            self.current_task_id = event.task_id
-            self.waiting_reason = "user_confirm"
+            self._touch_task(event.task_id)
+            self._task_waiting_reason[event.task_id] = "user_confirm"
+            self._entities.observe_agent_speech(event.speak)
             await self._speak(event.speak, "high")
         elif isinstance(event, ClarificationRequest):
-            self.current_task_id = event.task_id
-            self.waiting_reason = "user_clarify"
+            self._touch_task(event.task_id)
+            self._task_waiting_reason[event.task_id] = "user_clarify"
+            self._entities.observe_agent_speech(event.speak)
             await self._speak(event.speak, "high")
         elif isinstance(event, TaskUpdate):
-            self.current_task_id = event.task_id
-            self.waiting_reason = event.waiting_reason
+            self._touch_task(event.task_id)
+            self._task_waiting_reason[event.task_id] = event.waiting_reason
         elif isinstance(event, Done):
+            self._entities.observe_agent_speech(event.summary_speak)
             await self._speak(event.summary_speak, "high")
-            self.current_task_id = None
-            self.waiting_reason = None
+            self._drop_task(event.task_id)
         elif isinstance(event, Error):
             await self._speak(event.speak, "high")
             if not event.recoverable:
-                self.current_task_id = None
-                self.waiting_reason = None
+                self._drop_task(event.task_id)
         else:
             logger.warning("unhandled agent event type %r", type(event).__name__)
+
+        await self._persist_session()
