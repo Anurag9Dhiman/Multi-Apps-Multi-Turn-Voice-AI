@@ -23,7 +23,8 @@ uv run pytest                    # event-trace tests replay contract/scenarios/*
 `MOCK_AGENT_STEP_DELAY_S` (default `0.02`) paces scripted events for a more
 realistic manual demo; `MOCK_AGENT_INTERRUPT_WINDOW_S` (default `0.3`) is
 how long scenario C holds a batch open for a mid-flight interrupt before
-committing to running it uninterrupted.
+committing to running it uninterrupted. `SENTRY_DSN` (optional) enables
+error tracking; unset means no tracking, not a startup failure.
 
 State is in-memory and keyed by `user_id`, matching the plan's MVP scope —
 no database, single process, good for the automated tests and local demos

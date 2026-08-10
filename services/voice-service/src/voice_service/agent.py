@@ -14,6 +14,7 @@ LiveKit's own interruption mechanism rather than reimplementing it.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterable
 
 from anthropic import AsyncAnthropic
@@ -145,6 +146,16 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 def main() -> None:
+    # Read SENTRY_DSN straight from the environment rather than through
+    # Settings(): Settings requires all five speech-plugin keys too, and
+    # eagerly constructing it here would reintroduce the exact bug already
+    # fixed once -- `voice-service --help` failing with no keys set.
+    sentry_dsn = os.environ.get("SENTRY_DSN")
+    if sentry_dsn:
+        import sentry_sdk
+
+        sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=0.1)
+
     # ws_url/api_key/api_secret are left unset here: WorkerOptions already
     # falls back to the LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET env
     # vars itself, and only needs them once a job actually connects -- not
