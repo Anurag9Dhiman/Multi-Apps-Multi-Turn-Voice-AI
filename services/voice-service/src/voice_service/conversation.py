@@ -50,6 +50,7 @@ from voice_contract import (
 from .ack import AckGenerator
 from .collectiveos_client import CollectiveOSTransport
 from .entity_stack import EntityStack
+from .rate_limiter import InMemoryRateLimiter, RateLimiter
 from .router import HaikuRouter
 from .session_store import InMemorySessionStore, SessionSnapshot, SessionStore
 
@@ -87,6 +88,7 @@ class ConversationController:
         ack: AckGenerator | None = None,
         entities: EntityStack | None = None,
         session_store: SessionStore | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._client = client
         self._speak = speak
@@ -94,6 +96,7 @@ class ConversationController:
         self._ack = ack or AckGenerator()
         self._entities = entities or EntityStack()
         self._session_store = session_store or InMemorySessionStore()
+        self._rate_limiter = rate_limiter or InMemoryRateLimiter()
 
         self._session_id: str | None = None
         self._user_id: str | None = None
@@ -152,6 +155,11 @@ class ConversationController:
         """router_class is normally decided by the Haiku router; tests may
         pass it directly to exercise the send-side logic without a live
         Anthropic key."""
+        if self._user_id is not None and not await self._rate_limiter.allow(self._user_id):
+            logger.warning("rate limit exceeded for user %s, dropping: %r", self._user_id, text)
+            await self._speak("Let's slow down a moment.", "low")
+            return
+
         router_class = router_class or await self._router.classify(
             text, has_active_task=self.current_task_id is not None
         )

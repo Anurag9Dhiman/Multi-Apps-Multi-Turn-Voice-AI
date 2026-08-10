@@ -33,6 +33,12 @@ persistence/resume, and reconnection resilience on top.
    — in-memory by default, Redis in production) keyed by user_id, so a
    session that resumes hours or days later picks up where it left off.
 
+Every call into `handle_utterance` is metered first, before the router or
+CollectiveOS ever sees it: `rate_limiter.py`'s per-user token bucket
+(`InMemoryRateLimiter` by default, `RedisRateLimiter` in production) caps
+bursts and degrades a flood to "let's slow down a moment" instead of an
+unbounded Anthropic bill or a runaway loop.
+
 `conversation.py` and `speech_composer.py` have no LiveKit import at all —
 they're what weeks 5-8 actually add, proven against a **real, live
 mock-agent-backend over an actual socket**:
@@ -55,7 +61,7 @@ sharing one `SessionStore`, runs unmocked.
 
 ## What's here vs. what needs live credentials or infrastructure to prove out
 
-Unit- and integration-tested (53 tests, all green): router tool-call
+Unit- and integration-tested (60 tests, all green): router tool-call
 parsing, ack templates, the full multi-task `ConversationController` state
 machine (including which task an unqualified follow-up targets when more
 than one is active), the entity stack's pronoun resolution and its
@@ -63,18 +69,23 @@ deliberate refusal to treat sentence-initial capitalized words as entities,
 session snapshot/restore, the speech composer's priority and one-breath
 logic, the router eval harness's scoring/reporting (not the model's actual
 judgment — see below), the reconnect wrapper's backoff/give-up logic against
-a fake transport, and all three reference scenarios *plus* an unexpected
-mid-task connection drop, end to end over a real socket.
+a fake transport, the rate limiter's token-bucket math *and* that flooding
+one user never reaches the router while a different user is unaffected, and
+all three reference scenarios *plus* an unexpected mid-task connection
+drop, end to end over a real socket.
 
 **Not verifiable in this environment:**
 - The router's actual classification *judgment* in practice — its
   *plumbing* is tested; scoring it for real needs a live `ANTHROPIC_API_KEY`
   (`uv run python -m voice_service.router_eval`)
-- `RedisSessionStore` — structurally complete, no Redis instance exists
-  here to run it against
+- `RedisSessionStore` / `RedisRateLimiter` — structurally complete, no
+  Redis instance exists here to run either against
 - That `session.say()`/`session.interrupt()` behave the way `agent.py`
   assumes under a real barge-in — LiveKit's interruption semantics, not
   ours; worth checking first once live testing is possible
+- That Sentry actually receives an event — `SENTRY_DSN` unset here means
+  `sentry_sdk.init()` is never called at all; the wiring is one `if` away
+  from live, not tested end to end
 - Real-world audio, latency numbers, and audio edge cases (noise, silence,
   crosstalk) — genuinely need hardware this environment doesn't have.
   Dropped-connection recovery specifically *is* now covered (see above) —
@@ -106,8 +117,11 @@ uv run python -m voice_service.router_eval
 `config.py` requires `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`, and
 `ANTHROPIC_API_KEY` (one combined error if any are missing).
 `COLLECTIVEOS_WS_URL` defaults to `ws://localhost:8000/v1/ws` — mock-agent-backend's
-own default port. `REDIS_URL` is optional; unset means session state is
-in-process only (lost on restart) rather than persisted to Redis.
-`LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` are only needed for
-`voice-service dev`/`start` against a real room, not `console`. `--help`
-works with zero env vars set.
+own default port. `REDIS_URL` is optional; unset means session state and
+rate-limit counters are in-process only (lost on restart) rather than
+persisted to Redis. `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` are
+only needed for `voice-service dev`/`start` against a real room, not
+`console`. `SENTRY_DSN` is optional and read directly in `main()`, not
+through `Settings()` — same reasoning as `LIVEKIT_URL`: `--help` works with
+zero env vars set, and that has to keep being true as things get added,
+not just be true today.
