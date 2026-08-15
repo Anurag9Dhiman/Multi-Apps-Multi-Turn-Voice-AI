@@ -17,7 +17,6 @@ import logging
 import os
 from collections.abc import AsyncIterable
 
-from anthropic import AsyncAnthropic
 from livekit.agents import (
     Agent,
     AgentSession,
@@ -35,6 +34,7 @@ from .config import Settings
 from .conversation import ConversationController
 from .entity_stack import EntityStack
 from .latency import LatencyAggregator
+from .llm_provider import make_llm_client
 from .resilient_client import ReconnectingCollectiveOSClient
 from .router import HaikuRouter
 from .session_store import InMemorySessionStore, RedisSessionStore
@@ -107,7 +107,7 @@ async def entrypoint(ctx: JobContext) -> None:
         **TURN_MANAGER_SETTINGS.as_session_kwargs(),
     )
 
-    anthropic_messages = AsyncAnthropic(api_key=settings.anthropic_api_key).messages
+    llm_client = make_llm_client(settings)
     composer = _make_speech_composer(session, tracker)
 
     if settings.redis_url:
@@ -118,8 +118,8 @@ async def entrypoint(ctx: JobContext) -> None:
     controller = ConversationController(
         client=ReconnectingCollectiveOSClient(settings.collectiveos_ws_url),
         speak=composer.speak,
-        router=HaikuRouter(client=anthropic_messages),
-        ack=AckGenerator(client=anthropic_messages),
+        router=HaikuRouter(client=llm_client),
+        ack=AckGenerator(client=llm_client),
         entities=EntityStack(),
         session_store=session_store,
     )
