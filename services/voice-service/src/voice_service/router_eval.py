@@ -8,8 +8,9 @@ plan sec. 5 calls for growing it to ~200 over time as real misroutes turn
 up. Runnable two ways:
 
 - `uv run python -m voice_service.router_eval` -- scores a real HaikuRouter,
-  needs a live ANTHROPIC_API_KEY. Not runnable in this environment; see
-  voice-service/README.md.
+  needs a live ANTHROPIC_API_KEY or GEMINI_API_KEY (whichever
+  config.py's resolved_llm_provider picks). Not runnable in this
+  environment; see voice-service/README.md.
 - tests/test_router_eval.py -- scores a fake, deterministic router to prove
   the scoring/reporting logic itself is correct. This is what's actually
   verified here: the harness, not the model's judgment.
@@ -101,7 +102,12 @@ async def run_eval(
 
 
 async def _main() -> None:
-    router = HaikuRouter()
+    from .config import Settings
+    from .llm_provider import make_llm_client
+
+    settings = Settings()
+    print(f"provider: {settings.resolved_llm_provider}")
+    router = HaikuRouter(client=make_llm_client(settings))
     result = await run_eval(router.classify)
     print(result.report())
 
